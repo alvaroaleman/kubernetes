@@ -1070,15 +1070,6 @@ func (proxier *Proxier) syncProxyRules() {
 				continue
 			}
 
-			//if epIP in clusterIPS, jump to "KUBE-SEP" chain of that clusterip
-			isInClusterService, endpointChainName := isEndpointAService(endpoints[i], svcInfoMap, proxier.endpointsMap)
-			if isInClusterService {
-				arg := []string{"-A", string(svcChain), "-m", "comment", "--comment", svcNameString, "-p", protocol, "-j", string(endpointChainName)}
-				glog.Infof("Adding cluster ip short-circuit=%s", arg)
-				args = append(args[:0], arg...)
-				writeLine(proxier.natRules, args...)
-				continue
-			}
 			// Balancing rules in the per-service chain.
 			args = append(args[:0], []string{
 				"-A", string(svcChain),
@@ -1100,6 +1091,14 @@ func (proxier *Proxier) syncProxyRules() {
 				"-A", string(endpointChain),
 				"-m", "comment", "--comment", svcNameString,
 			)
+			//if epIP in clusterIPS, jump to "KUBE-SEP" chain of that clusterip
+			isInClusterService, targetEndpointChainName := isEndpointAService(endpoints[i], svcInfoMap, proxier.endpointsMap)
+			if isInClusterService {
+				args = append(args, "-p", protocol, "-j", string(targetEndpointChainName))
+				glog.Infof("Adding cluster ip short-circuit=%s", args)
+				writeLine(proxier.natRules, args...)
+				continue
+			}
 			// Handle traffic that loops back to the originator with SNAT.
 			writeLine(proxier.natRules, append(args,
 				"-s", utilproxy.ToCIDR(net.ParseIP(epIP)),
