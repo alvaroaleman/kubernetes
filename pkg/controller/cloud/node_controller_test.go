@@ -1100,3 +1100,42 @@ func TestNodeAddressesNotUpdate(t *testing.T) {
 		t.Errorf("Node addresses should not be updated")
 	}
 }
+
+// providerIDForAddressRequiringFakeCloud differs from fakecloud.Cloud in that it requires
+// a providerID to return a nodeAddress
+type providerIDForAddressRequiringFakeCloud struct {
+	*fakecloud.Cloud
+}
+
+func (f *providerIDForAddressRequiringFakeCloud) NodeAddresses(_ context.Context, instance types.NodeName) ([]v1.NodeAddress, error) {
+	return nil, errors.New("need providerID to return nodeAddresses ")
+}
+
+func (f *providerIDForAddressRequiringFakeCloud) NodeAddressesByProviderID(ctx context.Context, providerID string) ([]v1.NodeAddress, error) {
+	if providerID == "" {
+		return nil, errors.New("empty providerID")
+	}
+	return f.Cloud.NodeAddressesByProviderID(ctx, providerID)
+}
+
+func TestGetNodeModifiersFromCloudProvider(t *testing.T) {
+	const nodeName = "node"
+	c := &providerIDForAddressRequiringFakeCloud{
+		Cloud: &fakecloud.Cloud{
+			Addresses: []v1.NodeAddress{{Type: v1.NodeHostName, Address: "Berlin"}},
+			ExtID:     map[types.NodeName]string{types.NodeName(nodeName): "provider-id://a"},
+		},
+	}
+
+	node := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: nodeName,
+		},
+	}
+	cnc := &CloudNodeController{cloud: c}
+
+	nodeModifiers, err := cnc.getNodeModifiersFromCloudProvider(context.Background(), node, c)
+	if err != nil {
+		t.Fatalf("getNodeModifiersFromCloudProvider: %v", err)
+	}
+}
