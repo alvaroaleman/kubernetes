@@ -19,6 +19,7 @@ package cacher
 import (
 	"context"
 	"fmt"
+	goruntime "runtime"
 	"testing"
 	"time"
 
@@ -650,6 +651,7 @@ func (c *createWrapper) Create(ctx context.Context, key string, obj, out runtime
 
 func BenchmarkStoreCreateList(b *testing.B) {
 	klog.SetLogger(logr.Discard())
+	goruntime.SetMutexProfileFraction(1)
 	storeOptions := []struct {
 		name         string
 		btreeEnabled bool
@@ -658,29 +660,31 @@ func BenchmarkStoreCreateList(b *testing.B) {
 			name:         "Btree",
 			btreeEnabled: true,
 		},
-		{
-			name:         "Map",
-			btreeEnabled: false,
-		},
+		//	{
+		//		name:         "Map",
+		//		btreeEnabled: false,
+		//	},
 	}
 	for _, store := range storeOptions {
 		b.Run(fmt.Sprintf("Store=%s", store.name), func(b *testing.B) {
 			featuregatetesting.SetFeatureGateDuringTest(b, utilfeature.DefaultFeatureGate, features.BtreeWatchCache, store.btreeEnabled)
-			for _, rvm := range []metav1.ResourceVersionMatch{metav1.ResourceVersionMatchNotOlderThan, metav1.ResourceVersionMatchExact} {
-				b.Run(fmt.Sprintf("RV=%s", rvm), func(b *testing.B) {
-					for _, useIndex := range []bool{true, false} {
-						b.Run(fmt.Sprintf("Indexed=%v", useIndex), func(b *testing.B) {
-							opts := []setupOption{}
-							if useIndex {
-								opts = append(opts, withNodeNameAndNamespaceIndex)
-							}
-							ctx, cacher, _, terminate := testSetupWithEtcdServer(b, opts...)
-							b.Cleanup(terminate)
-							storagetesting.RunBenchmarkStoreListCreate(ctx, b, cacher, rvm)
-						})
+			rvm := metav1.ResourceVersionMatchNotOlderThan
+			//	for _, rvm := range []metav1.ResourceVersionMatch{metav1.ResourceVersionMatchNotOlderThan, metav1.ResourceVersionMatchExact} {
+			b.Run(fmt.Sprintf("RV=%s", rvm), func(b *testing.B) {
+				useIndex := true
+				//		for _, useIndex := range []bool{true, false} {
+				b.Run(fmt.Sprintf("Indexed=%v", useIndex), func(b *testing.B) {
+					opts := []setupOption{}
+					if useIndex {
+						opts = append(opts, withNodeNameAndNamespaceIndex)
 					}
+					ctx, cacher, _, terminate := testSetupWithEtcdServer(b, opts...)
+					b.Cleanup(terminate)
+					storagetesting.RunBenchmarkStoreListCreate(ctx, b, cacher, rvm)
 				})
-			}
+				//		}
+			})
+			//	}
 		})
 	}
 }
